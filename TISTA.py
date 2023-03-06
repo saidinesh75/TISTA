@@ -64,8 +64,7 @@ tww = (W.mm(Wt)).trace().to(device)  # trace(W W^T)
 Wt = torch.Tensor(Wt).to(device)
 At = torch.Tensor(At).to(device)
 
-print("sensing matrix A\n", A.detach().numpy())
-
+# print("sensing matrix A\n", A.detach().numpy())
 
 # detection for NaN
 def isnan(x):
@@ -76,7 +75,6 @@ def generate_batch():
     support = torch.bernoulli(p * torch.ones(batch_size, N))
     nonzero = torch.normal(0.0, alpha_std * torch.ones(batch_size, N))
     return torch.mul(nonzero, support)
-
 
 # definition of TISTA network
 class TISTA_NET(nn.Module): 
@@ -107,8 +105,6 @@ class TISTA_NET(nn.Module):
             s = self.MMSE_shrinkage(r, tau2)
         return s
 
-
-
 global sigma_std, sigma2, xi
 
 network = TISTA_NET().to(device)  # generating an instance of TISTA network
@@ -125,7 +121,6 @@ ave = sum/(100.0 * batch_size)
 sigma2 = ave/(M*math.pow(10.0, snr/10.0))
 sigma_std = math.sqrt(sigma2)
 xi = alpha2 + sigma2
-
 
 # incremental training loop
 start = time.time()
@@ -144,11 +139,8 @@ for gen in (range(num_generations)):
         grads = torch.stack([param.grad for param in network.parameters()])
         if isnan(grads).any():  # avoiding NaN in gradients
             continue
-
-
         opt.step()
     # end of training training
-
 
     # accuracy check after t-th incremental training
     nmse_sum = 0.0
@@ -168,3 +160,5 @@ for gen in (range(num_generations)):
 
 elapsed_time = time.time() - start
 print("elapsed_time:{0}".format(elapsed_time) + "[sec]")
+
+print("Done")
