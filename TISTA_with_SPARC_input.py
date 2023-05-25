@@ -1,18 +1,3 @@
-# Trainable ISTA (TISTA)
-# 
-# This code is an implementation of Trainable ISTA (TISTA) for sparse signal recovery in Pytorch.Tensor.
-# The details of the algorithm can be found in the paper:
-# Daisuke Ito, Satoshi Takabe, Tadashi Wadayama,
-# "Trainable ISTA for Sparse Signal Recovery", arXiv:1801.01978.
-# (Computer experiments in the paper was performed with another TensorFlow implementation)
-#
-# GPU is required for execution of this program. If you do not have GPU,
-# just change "device = torch.device('cuda')" to 'cpu'.
-# 
-# This basic TISTA trains only $\gamma_t$.
-#
-# Last update 11/21/2018
-
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -111,6 +96,8 @@ network = TISTA_NET().to(device)  # generating an instance of TISTA network
 s_zero = torch.Tensor(torch.zeros(batch_size, N)).to(device)  # initial value
 opt = optim.Adam(network.parameters(), lr=adam_lr)  # setting for optimizer (Adam)
 
+network_path = "/home/saidinesh/Research_work/learned_algos/LAMP_trained_models/LS_E{a}_tau".format(a=int(EbN0_dB))  # gtdB_learnable means gamma, tau, delta and B are learnable
+
 # SNR calculation
 sum = 0.0
 for i in range(100):
@@ -160,5 +147,7 @@ for gen in (range(num_generations)):
 
 elapsed_time = time.time() - start
 print("elapsed_time:{0}".format(elapsed_time) + "[sec]")
+
+torch.save(network.state_dict(),"/home/saidinesh/TISTA/trained_models/TISTA_SPARC_L2_")
 
 print("Done")
