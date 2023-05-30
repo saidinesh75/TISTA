@@ -33,7 +33,7 @@ p = 0.1  # probability for occurrence of non-zero components
 batch_size = 1000  # mini-batch size
 num_batch = 200  # number of mini-batches in a generation
 num_generations = 12  # number of generations
-snr = 40.0  # SNR for the system in dB
+snr = 10.0  # SNR for the system in dB
 
 alpha2 = 1.0  # variance of non-zero component
 alpha_std = math.sqrt(alpha2)

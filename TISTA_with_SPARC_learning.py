@@ -2,7 +2,7 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 import torch
-torch.manual_seed(5)
+# torch.manual_seed(5)
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
@@ -18,7 +18,7 @@ rng = np.random.RandomState(seed=None)
 from generate_msg_tista import generate_msg_tista
 torch.set_default_dtype(torch.float64)
 
-dir_name = "/home/saidinesh/TISTA/TISTA_figures/"
+dir_name = "/home/saidinesh/Research_work/TISTA/TISTA_figures/"
 plt.rcParams["savefig.directory"] = os.chdir(os.path.dirname(dir_name))
 
 # device
@@ -27,27 +27,25 @@ device = torch.device('cuda:1') # choose 'cpu' or 'cuda'
 # global variables
 batch_size = 500  # mini-batch size
 num_batch = 10  # number of mini-batches in a generation
-num_generations = 1  # number of generations
-# snr = 40.0  # SNR for the system in dB
-
-# alpha2 = 1.0  # variance of non-zero componen
-# alpha_std = math.sqrt(alpha2)
+num_generations = 5  # number of generations
 max_layers = num_generations  # maximum number of layers
 adam_lr = 0.04  # initial learning parameter for Adam
-
-''
+learning = 1
+''' Loading MUB matrix
 # Loading the MUB Matrix
-# data=loadmat("/home/saidinesh/Modulated_SPARCs/MUB_2_6.mat")
+# data=loadmat("/home/saidinesh/Research_work/Dinesh_SPARC_codes_2/gold_mat_files/goldi_31")
 # A_ = np.array(data['B'])
 # n,N = np.shape(A_)  # (64*4160)
+A = torch.from_numpy(A_)
+
 # L = int(4)
 # M = int(N/L)
-''
+'''
 
 code_params = {'P': 1,    # Average codeword symbol power constraint
                'R':0.5,
                'L': 4,    # Number of sections
-               'M': 1024,      # Columns per section
+               'M': 128,      # Columns per section
                'dist':0,
                'EbN0_dB':15,
                'modulated':False,
@@ -81,17 +79,11 @@ n = int(round(bit_len/R))
 R_actual = bit_len/n
 code_params.update({'R':R_actual})
 
-# Just for the computation to work
-# alpha2  =  1.1
-# p = 1/M
-
-# Generating the codebook for MAP detection after the last layer
-# codeboook =  torch.eye(M)
-
 # Generating the measurement Matrix
 A = torch.normal(0.0, std=math.sqrt(P/L) * torch.ones(n, N))
-# A_ = np.sqrt(n*P/L)*A_ 
+
 # A = torch.from_numpy(A_)
+# A_ = np.sqrt(n*P/L)*A_ 
 
 At = A.t()
 W = At.mm((A.mm(At)).inverse())  # pseudo inverse matrix
@@ -140,7 +132,7 @@ class TISTA_SPARC_NET(nn.Module):
 
         return beta_th
     '''
-    
+
     ''
     def MMSE_sparc_shrinkage(self, beta_hat, tau2):
         beta_th = torch.zeros(list(beta_hat.size()))
@@ -207,25 +199,33 @@ code_params.update({'awgn_var':sigma2})
 snr_rx = P/sigma2
 capacity = 0.5 * math.log2(1 + snr_rx)
 
+network_path = "/home/saidinesh/Research_work/TISTA/TISTA_trained_models_new/ST_n{n}N{N}_E{ebno}_L{layers}".format(n=n, N=N,ebno = EbN0_dB,layers=max_layers) # gtdB_learnable means gamma, tau, delta and B are learnable
+
 # incremental training loop
 start = time.time()
 
 for gen in (range(num_generations)):
     # training process
-    for i in range(num_batch):
-        if (gen > 10):
-            opt = optim.Adam(network.parameters(), lr = adam_lr/50.0)
-        x = torch.Tensor(generate_msg_tista(code_params,batch_size)).to(device)
-        opt.zero_grad()
-        x_hat = network(x, s_zero, gen +1).to(device)
-        
-        loss = F.mse_loss(x_hat,x)
-        loss.backward()
+    if os.path.exists(network_path):
+        network.load_state_dict(torch.load(network_path))
+    else:
+        for i in range(num_batch):
+            # if os.path.exists(network_path):
+            #         network.load_state_dict(torch.load(network_path))
+            #         break
+            if (gen > 10):
+                opt = optim.Adam(network.parameters(), lr = adam_lr/50.0)
+            x = torch.Tensor(generate_msg_tista(code_params,batch_size)).to(device)
+            opt.zero_grad()
+            x_hat = network(x, s_zero, gen +1).to(device)
+            
+            loss = F.mse_loss(x_hat,x)
+            loss.backward()
 
-        grads = torch.stack([param.grad for param in network.parameters()])
-        if isnan(grads).any():  # avoiding NaN in gradients
-            continue
-        opt.step()
+            grads = torch.stack([param.grad for param in network.parameters()])
+            if isnan(grads).any():  # avoiding NaN in gradients
+                continue
+            opt.step()
         # end of training
 
     # accuracy check after t-th incremental training

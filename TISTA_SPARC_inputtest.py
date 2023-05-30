@@ -6,7 +6,7 @@
 # "Trainable ISTA for Sparse Signal Recovery", arXiv:1801.01978.
 # (Computer experiments in the paper was performed with another TensorFlow implementation)
 #
-# GPU is required for execution of this program. If you do not have GPU,
+# GPU is required for exfecution of this program. If you do not have GPU,
 # just change "device = torch.device('cuda')" to 'cpu'.
 # 
 # This basic TISTA trains only $\gamma_t$.
@@ -14,7 +14,7 @@
 # Last update 11/21/2018
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -22,43 +22,56 @@ import torch.nn.functional as F
 import torch.optim as optim
 import math
 import time
+from scipy.io import loadmat
 torch.set_default_dtype(torch.float64)
 from generate_msg_tista import generate_msg_tista
 
 # device
 device = torch.device('cuda') # choose 'cpu' or 'cuda'
 
+data=loadmat("/home/saidinesh/Research_work/Dinesh_SPARC_codes_2/gold_mat_files/goldi_31")
+
+A_ = np.array(data['B'])
+n,N = np.shape(A_)  # (64*4160)
+A = torch.from_numpy(A_)
+# N = int(n**2)
+# A_unitnorm_ = A_[:,:N]
+
 # global variables
 
-N = 512  # length of a source signal vector
-n = 250  # length of a observation vector
-p = 0.1  # probability for occurrence of non-zero components
+# N = 512  # length of a source signal vector
+# n = 64  # length of a observation vector
+# p = 0.1  # probability for occurrence of non-zero components
 
 batch_size = 1000  # mini-batch size
-num_batch = 200  # number of mini-batches in a generation
-num_generations = 12  # number of generations
-snr = 40.0  # SNR for the system in dB
+num_batch = 100  # number of mini-batches in a generation
+num_generations = 6  # number of generations
+snr =  30 # SNR for the system in dB
 
 alpha2 = 1.0  # variance of non-zero component
 alpha_std = math.sqrt(alpha2)
-max_layers = 12  # maximum number of layers
+max_layers = num_generations  # maximum number of layers
 adam_lr = 0.04  # initial learning parameter for Adam
 
 learning=1
 # random seed of torch
-torch.manual_seed(5)
+# torch.manual_seed(5)
 
 ### setting sensing matrix
 # sensing matrix with small variance
-A = torch.normal(0.0, std=math.sqrt(1.0/n) * torch.ones(n, N)) 
+# A = torch.normal(0.0, std=math.sqrt(1.0/n) * torch.ones(n, N)) 
 
 #####... SPARC encoding.....####
-code_params = {'P': 1,    # Average codeword symbol power constraint
-                'L': 4,    # Number of sections
-                'M': 128,      # Columns per section
+L = int(4)
+M = int(N/L)
+P = 1
+p = L/N  # indicates the sparsity. The length of the message is N and the no. of nonzero values is L.
+code_params = {'P': P,    # Average codeword symbol power constraint
+                'L': L,    # Number of sections
+                'M': M,      # Columns per section
                 'dist':0,
                 'n':n,
-                'EbN0_dB':40,
+                'EbN0_dB':5,
                 'modulated':False,
                 'power_allocated':True,
                 'spatially_coupled':False,
@@ -66,7 +79,6 @@ code_params = {'P': 1,    # Average codeword symbol power constraint
                 'K':0
                 }
 
-P,L,M = map(code_params.get, ['P','L','M'])
 
 delim = torch.zeros([2,L])
 delim[0,0] = 0
@@ -75,6 +87,7 @@ delim[1,0] = M-1
 for i in range(1,L):
     delim[0,i] = delim[1,i-1]+1
     delim[1,i] = delim[1,i-1]+M
+
 # sensing matrix with large variance
 #A = torch.normal(0.0, std=math.sqrt(1.0) * torch.ones(M, N))  
 
@@ -99,10 +112,10 @@ def isnan(x):
     return x != x
 
 # mini-batch generator
-# def generate_batch():
-#     support = torch.bernoulli(p * torch.ones(N, batch_size))
-#     nonzero = torch.normal(0.0, alpha_std * torch.ones(N, batch_size))
-#     return torch.mul(nonzero, support)
+def generate_batch():
+    support = torch.bernoulli(p * torch.ones(N, batch_size))
+    nonzero = torch.normal(0.0, alpha_std * torch.ones(N, batch_size))
+    return torch.mul(nonzero, support)
 
 # definition of TISTA network
 class TISTA_NET(nn.Module): 
@@ -138,12 +151,13 @@ global sigma_std, sigma2, xi
 network = TISTA_NET().to(device)  # generating an instance of TISTA network
 s_zero = torch.Tensor(torch.zeros(N,batch_size)).to(device)  # initial value
 opt = optim.Adam(network.parameters(), lr=adam_lr)  # setting for optimizer (Adam)
-network_path = "/home/dinesh/Research_work/TISTA/TISTA_trained_models_2/S_TISTA_n250N512_SNR40_L12" # gtdB_learnable means gamma, tau, delta and B are learnable
+network_path = "/home/saidinesh/Research_work/TISTA/TISTA_trained_models_new/SGT_n{n}N{N}_S{snr}_L{layers}".format(n=n, N=N,snr=snr,layers=max_layers) # gtdB_learnable means gamma, tau, delta and B are learnable
 
 # SNR calculation
 sum = 0.0
 for i in range(100):
     x = torch.Tensor(generate_msg_tista(code_params,batch_size)).to(device)
+    # x = torch.Tensor(generate_batch()).to(device)
     y = A.mm(x)
     sum += (torch.norm(y, p=2).pow(2.0)).sum().item()
 ave = sum/(100.0 * batch_size)
@@ -156,22 +170,25 @@ start = time.time()
 
 for gen in (range(num_generations)):
     # training process 
-    if learning:
+    if os.path.exists(network_path):
+        network.load_state_dict(torch.load(network_path))
+    else:    
         for i in range(num_batch):
-            if os.path.exists(network_path):
-                    network.load_state_dict(torch.load(network_path))
-                    break
             if (gen > 10): # change learning rate of Adam
                 opt = optim.Adam(network.parameters(), lr=adam_lr/50.0)
-            x = torch.Tensor(generate_msg_tista(code_params,batch_size)).to(device)
+            x = torch.Tensor(generate_msg_tista(code_params,batch_size)).to(device) 
+            # x = torch.Tensor(generate_batch()).to(device)
+
             opt.zero_grad()
             x_hat = network(x, s_zero, gen+1).to(device)
+            # x_hat = network(x, s_zero, max_layers).to(device)
             loss = F.mse_loss(x_hat, x)
             loss.backward()
 
             grads = torch.stack([param.grad for param in network.parameters()])
             if isnan(grads).any():  # avoiding NaN in gradients
-                continue
+                # continue
+                break
             opt.step()
     # end of training training
 
@@ -181,16 +198,20 @@ for gen in (range(num_generations)):
     tot = 25 # batch size for accuracy check
     for i in range(tot):
         x = torch.Tensor(generate_msg_tista(code_params,batch_size)).to(device)
+        # x = torch.Tensor(generate_batch()).to(device)
         x_hat = network(x, s_zero, gen+1).to(device)
+        if torch.isnan(x_hat).any():
+            print("x_hat is going to naN")
+
+        # assert torch.isnan(x_hat), "something wrong"
+
         # num = (x - x_hat).norm(2, 1).pow(2.0)
         # denom = x.norm(2,1).pow(2.0)
         # nmse = num/denom
         # nmse_sum += torch.sum(nmse).item()
 
         # MAP estimator
-        # for k in range(tot):
         for l in range(L):
-            # x_hat[l*M + torch.argmax( x_hat[int(delim[0,l]):int(delim[0,l]+1), k]) , k] = 1
             index = torch.argmax(x_hat[int(delim[0,l]):int(delim[1,l]+1), :],dim=0)
             x_hat[int(delim[0,l]):int(delim[1,l]+1), :] =torch.eye(M)[:,index]
 
@@ -201,8 +222,9 @@ for gen in (range(num_generations)):
     # nmse = 10.0*math.log(nmse_sum / (tot * batch_size))/math.log(10.0) #NMSE [dB]
     avg_sec_err = sec_err_sum / tot
 
-    # print('({0}) NMSE= {1:6.3f} and avg_sec_err_rate = {a}'.format(gen + 1, nmse,a=avg_sec_err))
+    # print('({0}) NMSE= {1:6.3f} '.format(gen + 1, nmse))
     print('({0}) avg_sec_err_rate = {a}'.format(gen + 1,a=avg_sec_err))
+    # print('({0}) NMSE= {1:6.3f} and avg_sec_err_rate = {a}'.format(gen + 1,nmse, a=avg_sec_err))
     # end of accuracy check
  
 elapsed_time = time.time() - start

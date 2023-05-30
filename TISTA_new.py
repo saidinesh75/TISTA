@@ -22,7 +22,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import math
 import time
-torch.set_default_dtype(torch.float64)
+torch.set_default_dtype(torch.double)
 # device
 device = torch.device('cuda') # choose 'cpu' or 'cuda'
 
@@ -30,12 +30,12 @@ device = torch.device('cuda') # choose 'cpu' or 'cuda'
 
 N = 512  # length of a source signal vector
 M = 250  # length of a observation vector
-p = 0.1  # probability for occurrence of non-zero components
+p = 0.1 # probability for occurrence of non-zero components
 
 batch_size = 1000  # mini-batch size
 num_batch = 200  # number of mini-batches in a generation
 num_generations = 12  # number of generations
-snr = 40.0  # SNR for the system in dB
+snr = 40  # SNR for the system in dB
 
 alpha2 = 1.0  # variance of non-zero component
 alpha_std = math.sqrt(alpha2)
@@ -113,7 +113,7 @@ global sigma_std, sigma2, xi
 network = TISTA_NET().to(device)  # generating an instance of TISTA network
 s_zero = torch.Tensor(torch.zeros(N,batch_size)).to(device)  # initial value
 opt = optim.Adam(network.parameters(), lr=adam_lr)  # setting for optimizer (Adam)
-network_path = "/home/dinesh/Research_work/TISTA/TISTA_trained_models_2/G_TISTA_n250N512_SR40_L12" # gtdB_learnable means gamma, tau, delta and B are learnable
+network_path = "/home/saidinesh/Research_work/TISTA/TISTA_trained_models_new/GTISTA_n{n}N{N}_SNR{snr}_L{layers}".format(n=M, N=N,snr=snr,layers=max_layers) # gtdB_learnable means gamma, tau, delta and B are learnable
 
 # SNR calculation
 sum = 0.0
@@ -146,7 +146,7 @@ for gen in (range(num_generations)):
 
             grads = torch.stack([param.grad for param in network.parameters()])
             if isnan(grads).any():  # avoiding NaN in gradients
-                continue
+                break
             opt.step()
     # end of training training
 

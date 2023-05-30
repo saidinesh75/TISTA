@@ -1,0 +1,21 @@
+Type of model:
+GT - TISTA for general sparsity case
+SGT - TISTA for general sparse case (i.e., the same structure) but SPARC messages and codewords are used for training
+ST - TISTA for SPARCs i.e., mmse function changed according to SPARCs and SPARC codewords are used for training
+
+n= length of codeword
+N= length of the message vector
+layers = number of layers in the model
+
+i- incremental training (training layer wise)
+o- one shot training of the whole model
+
+
+Naming convention:
+(GT/SGT)_nN_snr_layers_(i/o)
+ST_nN_EbN0_layers_(i/o)
+
+Example: 
+SGT_n64N512_20_7: model represents a TISTA for general sparsity case with n=64, N=512, SNR=20, 
+no_layers=7
+
