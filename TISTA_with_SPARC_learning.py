@@ -31,6 +31,7 @@ num_generations = 5  # number of generations
 max_layers = num_generations  # maximum number of layers
 adam_lr = 0.04  # initial learning parameter for Adam
 learning = 1
+
 ''' Loading MUB matrix
 # Loading the MUB Matrix
 # data=loadmat("/home/saidinesh/Research_work/Dinesh_SPARC_codes_2/gold_mat_files/goldi_31")
@@ -43,11 +44,11 @@ A = torch.from_numpy(A_)
 '''
 
 code_params = {'P': 1,    # Average codeword symbol power constraint
-               'R':0.5,
+               'R':0.4375,  # 0.4375 will give n=64
                'L': 4,    # Number of sections
                'M': 128,      # Columns per section
                'dist':0,
-               'EbN0_dB':15,
+               'EbN0_dB':20,
                'modulated':False,
                'power_allocated':True,
                'spatially_coupled':False,
@@ -86,7 +87,7 @@ A = torch.normal(0.0, std=math.sqrt(P/L) * torch.ones(n, N))
 # A_ = np.sqrt(n*P/L)*A_ 
 
 At = A.t()
-W = At.mm((A.mm(At)).inverse())  # pseudo inverse matrix
+W = At.mm((A.mm(At)).inverse())  # pseudo inverse matrix  (Tried using Goldcode matrix but they are not invertible)
 Wt = W.t()
 
 taa = (At.mm(A)).trace().to(device)  # trace(A^T A)
@@ -108,33 +109,6 @@ class TISTA_SPARC_NET(nn.Module):
 
     '''
     def MMSE_sparc_shrinkage(self, beta_hat, tau2):
-        # exp(89) is max for torch.float32 and exp(709) is max for torch.float64
-        beta_th = torch.zeros(list(beta_hat.size()))
-        for i in range(batch_size):
-            s1 = beta_hat[:,i].clone()
-            for j in range(L):
-                beta_section = s1[int(delim[0,j]):int(delim[1,j]+1)]
-                beta_th_section = torch.zeros(int(M))
-                exp_param = (beta_section* torch.sqrt(n*P_vec[j]))/tau2[0,i]
-
-                #initialization 
-                new_exp_param = exp_param  # same will be used the max is less than 308
-                max_exp_param = torch.max(new_exp_param)
-                max_minus_term = 0
-                if max_exp_param>709:
-                    max_minus_term = max_exp_param - 709
-                    new_exp_param = exp_param - max_minus_term
-                denom = torch.sum(torch.exp(new_exp_param) ) 
-                for k in range(int(M)):
-                     num = torch.exp(  ((beta_section[k]* torch.sqrt(n*P_vec[j]))/tau2[0,i])  - max_minus_term )
-                     beta_th_section[k] = num/denom
-                beta_th[int(delim[0,j]):int(delim[1,j]+1), i] = beta_th_section  
-
-        return beta_th
-    '''
-
-    ''
-    def MMSE_sparc_shrinkage(self, beta_hat, tau2):
         beta_th = torch.zeros(list(beta_hat.size()))
         for i in range(batch_size):
             s1 = beta_hat[:,i]
@@ -149,25 +123,21 @@ class TISTA_SPARC_NET(nn.Module):
                 beta_th[int(delim[0,j]):int(delim[1,j]+1), i] = torch.exp(exp_param)/denom
     
         return beta_th
-    ''
+    '''
     
-    '''
-     def gauss(self, x,  var):
-        return torch.exp(-torch.mul(x, x)/(2.0*var))/pow(2.0*math.pi*var,0.5)
-
-    def MMSE_shrinkage(self, y, tau2):  # MMSE shrinkage function
-        return (y*alpha2/(alpha2+tau2))*p*self.gauss(y,(alpha2+tau2))/((1-p)*self.gauss(y, tau2) + p*self.gauss(y, (alpha2+tau2)))
-
-    def MMSE_shrinkage(self, y, tau2):
-        temp0 = alpha2 + tau2
-        temp1 = y*alpha2/temp0
-        temp2 = temp1*p*self.gauss(y,(alpha2+tau2))
-
-        temp3 = (1-p)*self.gauss(y, tau2)
-        temp4 = p*self.gauss(y, (alpha2+tau2))
-
-        return temp2/(temp3 + temp4)
-    '''
+    def MMSE_sparc_shrinkage(self, beta_hat, tau2):
+        beta_th = torch.zeros(list(beta_hat.size()))
+        for j in range(L):
+            exp_param = (beta_hat[int(delim[0,j]):int(delim[1,j]+1),:] * torch.sqrt(n*P_vec[j]))/tau2[0,:]
+            max_exp_param = torch.max(exp_param)
+            max_minus_term = 0
+            if max_exp_param > 709:
+                max_minus_term = max_exp_param - 709
+                exp_param = exp_param - max_minus_term
+            denom = torch.sum(torch.exp(exp_param),dim=0)
+            beta_th[int(delim[0,j]):int(delim[1,j]+1), :] = torch.exp(exp_param)/denom
+    
+        return beta_th
     
     def eval_tau2(self, t, i):  # error variance estimator
         v2 = (t.norm(2,0).pow(2.0) - M*sigma2)/taa
@@ -183,6 +153,7 @@ class TISTA_SPARC_NET(nn.Module):
             tau2 = self.eval_tau2(t, i)
             r = s + W.mm(t)*self.gamma[i]
             s = torch.Tensor(self.MMSE_sparc_shrinkage(r, tau2)).to(device)
+            # s_new = torch.Tensor(self.MMSE_sparc_shrinkage_new(r, tau2)).to(device)
         return s
     
 global sigma_std, sigma2, xi  
@@ -210,9 +181,6 @@ for gen in (range(num_generations)):
         network.load_state_dict(torch.load(network_path))
     else:
         for i in range(num_batch):
-            # if os.path.exists(network_path):
-            #         network.load_state_dict(torch.load(network_path))
-            #         break
             if (gen > 10):
                 opt = optim.Adam(network.parameters(), lr = adam_lr/50.0)
             x = torch.Tensor(generate_msg_tista(code_params,batch_size)).to(device)
@@ -231,33 +199,34 @@ for gen in (range(num_generations)):
     # accuracy check after t-th incremental training
     nmse_sum = 0.0
     sec_err_sum = 0.0
-    tot = 20 # batch size for accuracy check
+    tot = 25 # batch size for accuracy check
     for i in range(tot):
         x = torch.Tensor(generate_msg_tista(code_params, batch_size)).to(device)
         x_hat = network(x, s_zero, gen+1).to(device)
 
-        # MAP estimator
-        for k in range(tot):
-            for l in range(L):
-                x_hat[l*M + torch.argmax( x_hat[int(delim[0,l]):int(delim[0,l]+1), k]) , k] = 1
+        # num = (x - x_hat).norm(2, 0).pow(2.0)
+        # denom = x.norm(2,0).pow(2.0)
+        # nmse = num/denom
+        # nmse_sum += torch.sum(nmse).item()
 
-        num = (x - x_hat).norm(2, 0).pow(2.0)
-        denom = x.norm(2,0).pow(2.0)
-        nmse = num/denom
-        nmse_sum += torch.sum(nmse).item()
+        # MAP estimator
+        for l in range(L):
+            index = torch.argmax(x_hat[int(delim[0,l]):int(delim[1,l]+1), :],dim=0)
+            x_hat[int(delim[0,l]):int(delim[1,l]+1), :] =torch.eye(M)[:,index]        
 
         sec_errors = torch.sum(torch.abs(x - x_hat))/2 
         sec_error = sec_errors/(batch_size*L)
-        sec_err_sum += sec_error
+        sec_err_sum = sec_err_sum + sec_error.item()
 
     avg_sec_err = sec_err_sum / tot
-    nmse = 10.0*math.log(nmse_sum / (tot * batch_size))/math.log(10.0) #NMSE [dB]
+    # nmse = 10.0*math.log(nmse_sum / (tot * batch_size))/math.log(10.0) #NMSE [dB]
 
-    print('({0}) NMSE= {1:6.3f} and avg_sec_err_rate = {a}'.format(gen + 1, nmse, a = avg_sec_err))
+    # print('({0}) NMSE= {1:6.3f} and avg_sec_err_rate = {a}'.format(gen + 1, nmse, a = avg_sec_err))
+    print('({0}) avg_sec_err_rate = {a}'.format(gen + 1, a = avg_sec_err))
     # end of accuracy check    
 
 elapsed_time = time.time() - start
 print("elapsed_time:{0}".format(elapsed_time) + "[sec]")
 
-torch.save(network.state_dict(),"/home/saidinesh/TISTA/trained_models/TISTA_SPARC_L2_")
+torch.save(network.state_dict(),network_path)
 print("Done")
