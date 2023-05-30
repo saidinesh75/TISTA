@@ -18,7 +18,7 @@ rng = np.random.RandomState(seed=None)
 from generate_msg_tista import generate_msg_tista
 torch.set_default_dtype(torch.float64)
 
-dir_name = "/home/saidinesh/Research_work/TISTA/TISTA_figures/"
+dir_name = "/home/dinesh/Research_work/TISTA/TISTA_figures/"
 plt.rcParams["savefig.directory"] = os.chdir(os.path.dirname(dir_name))
 
 # device
@@ -33,7 +33,7 @@ adam_lr = 0.04  # initial learning parameter for Adam
 learning = 1
 ''' Loading MUB matrix
 # Loading the MUB Matrix
-# data=loadmat("/home/saidinesh/Research_work/Dinesh_SPARC_codes_2/gold_mat_files/goldi_31")
+# data=loadmat("/home/dinesh/Research_work/Dinesh_SPARC_codes_2/gold_mat_files/goldi_31")
 # A_ = np.array(data['B'])
 # n,N = np.shape(A_)  # (64*4160)
 A = torch.from_numpy(A_)
@@ -47,7 +47,7 @@ code_params = {'P': 1,    # Average codeword symbol power constraint
                'L': 4,    # Number of sections
                'M': 128,      # Columns per section
                'dist':0,
-               'EbN0_dB':15,
+               'EbN0_dB':30,
                'modulated':False,
                'power_allocated':True,
                'spatially_coupled':False,
@@ -199,7 +199,7 @@ code_params.update({'awgn_var':sigma2})
 snr_rx = P/sigma2
 capacity = 0.5 * math.log2(1 + snr_rx)
 
-network_path = "/home/saidinesh/Research_work/TISTA/TISTA_trained_models_new/ST_n{n}N{N}_E{ebno}_L{layers}".format(n=n, N=N,ebno = EbN0_dB,layers=max_layers) # gtdB_learnable means gamma, tau, delta and B are learnable
+network_path = "/home/dinesh/Research_work/TISTA/TISTA_trained_models_new/ST_n{n}N{N}_E{ebno}_L{layers}".format(n=n, N=N,ebno = EbN0_dB,layers=max_layers) # gtdB_learnable means gamma, tau, delta and B are learnable
 
 # incremental training loop
 start = time.time()
@@ -210,9 +210,6 @@ for gen in (range(num_generations)):
         network.load_state_dict(torch.load(network_path))
     else:
         for i in range(num_batch):
-            # if os.path.exists(network_path):
-            #         network.load_state_dict(torch.load(network_path))
-            #         break
             if (gen > 10):
                 opt = optim.Adam(network.parameters(), lr = adam_lr/50.0)
             x = torch.Tensor(generate_msg_tista(code_params,batch_size)).to(device)
@@ -259,5 +256,5 @@ for gen in (range(num_generations)):
 elapsed_time = time.time() - start
 print("elapsed_time:{0}".format(elapsed_time) + "[sec]")
 
-torch.save(network.state_dict(),"/home/saidinesh/TISTA/trained_models/TISTA_SPARC_L2_")
+torch.save(network.state_dict(),network_path)
 print("Done")
